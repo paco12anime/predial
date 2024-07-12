@@ -20,7 +20,7 @@ Sistema de Predial es una aplicación de escritorio desarrollada con PyQt5 y SQL
 1. Clona este repositorio:
 
     ```bash
-    git clone https://github.com/tu_usuario/sistema-de-predial.git
+    git clone https://github.com/paco12anime/sistema-de-predial.git
     cd sistema-de-predial
     ```
 
@@ -62,4 +62,4 @@ Sistema de Predial es una aplicación de escritorio desarrollada con PyQt5 y SQL
 
 ## Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo `LICENSE` para obtener más detalles.
+Este proyecto está licenciado bajo la Licencia GPLv3. Consulta el archivo `LICENSE` para obtener más detalles.
