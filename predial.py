@@ -1,187 +1,244 @@
 import sys
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel,
-                             QLineEdit, QPushButton, QMessageBox, QCheckBox)
-from PyQt5.QtGui import QIntValidator
+import hashlib
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QCheckBox, QStackedWidget, QTabWidget, QLabel, QMessageBox)
+from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt
 import sqlite3
 
-# Conexión a la base de datos
-conn = sqlite3.connect('usuarios.db')
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT, apellido TEXT, telefono TEXT UNIQUE, correo TEXT, contrasena TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS adeudos (cuenta TEXT PRIMARY KEY, adeudo REAL)''')
-c.execute('''INSERT OR IGNORE INTO adeudos (cuenta, adeudo) VALUES ('UA009999001', 1500.50)''')
-conn.commit()
+class DatabaseManager:
+    def __init__(self, db_name):
+        self.db_name = db_name
+        self.connect()
+
+    def connect(self):
+        self.conn = sqlite3.connect(self.db_name)
+        self.cursor = self.conn.cursor()
+
+    def setup(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT,
+                apellido TEXT,
+                telefono TEXT UNIQUE,
+                correo TEXT,
+                contrasena TEXT
+            )
+        ''')
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS adeudos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cuenta TEXT UNIQUE,
+                adeudo REAL
+            )
+        ''')
+        self.conn.commit()
+
+    def register_user(self, nombre, apellido, telefono, correo, contrasena):
+        hashed_password = hashlib.sha256(contrasena.encode()).hexdigest()
+        self.cursor.execute('''
+            INSERT INTO usuarios (nombre, apellido, telefono, correo, contrasena)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (nombre, apellido, telefono, correo, hashed_password))
+        self.conn.commit()
+
+    def login_user(self, telefono, contrasena):
+        hashed_password = hashlib.sha256(contrasena.encode()).hexdigest()
+        self.cursor.execute('''
+            SELECT * FROM usuarios WHERE telefono = ? AND contrasena = ?
+        ''', (telefono, hashed_password))
+        return self.cursor.fetchone()
+
+    def query_debt(self, cuenta):
+        self.cursor.execute('SELECT adeudo FROM adeudos WHERE cuenta = ?', (cuenta,))
+        return self.cursor.fetchone()
+
+    def close(self):
+        self.conn.close()
+
+
+class AuthWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        header_label = QLabel("Predial")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setFont(QFont("Arial", 24, QFont.Bold))
+        layout.addWidget(header_label)
+        
+        self.tab_widget = QTabWidget()
+        self.login_tab = QWidget()
+        self.register_tab = QWidget()
+        
+        self.tab_widget.addTab(self.login_tab, "Iniciar sesión")
+        self.tab_widget.addTab(self.register_tab, "Registrarse")
+        
+        login_layout = QVBoxLayout(self.login_tab)
+        self.login_phone = QLineEdit()
+        self.login_phone.setPlaceholderText('Teléfono')
+        self.login_password = QLineEdit()
+        self.login_password.setPlaceholderText('Contraseña')
+        self.login_password.setEchoMode(QLineEdit.Password)
+        self.terms_checkbox = QCheckBox('Aceptar términos')
+        self.login_button = QPushButton('Entrar')
+        self.login_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; color: black;")
+        
+        login_layout.addWidget(self.login_phone)
+        login_layout.addWidget(self.login_password)
+        login_layout.addWidget(self.terms_checkbox)
+        login_layout.addWidget(self.login_button)
+        login_layout.setSpacing(10)
+        
+        register_layout = QVBoxLayout(self.register_tab)
+        self.first_name = QLineEdit()
+        self.first_name.setPlaceholderText('Nombres')
+        self.last_name = QLineEdit()
+        self.last_name.setPlaceholderText('Apellidos')
+        self.register_phone = QLineEdit()
+        self.register_phone.setPlaceholderText('Número de teléfono')
+        self.email = QLineEdit()
+        self.email.setPlaceholderText('Correo electrónico')
+        self.register_password = QLineEdit()
+        self.register_password.setPlaceholderText('Contraseña')
+        self.register_password.setEchoMode(QLineEdit.Password)
+        self.register_button = QPushButton('Regístrate')
+        self.register_button.setStyleSheet("background-color: #008CBA; color: white; padding: 10px; color: black;")
+        
+        register_layout.addWidget(self.first_name)
+        register_layout.addWidget(self.last_name)
+        register_layout.addWidget(self.register_phone)
+        register_layout.addWidget(self.email)
+        register_layout.addWidget(self.register_password)
+        register_layout.addWidget(self.register_button)
+        register_layout.setSpacing(10)
+        
+        layout.addWidget(self.tab_widget)
+
+
+class DebtQueryWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        header_label = QLabel("Predial")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setFont(QFont("Arial", 24, QFont.Bold))
+        layout.addWidget(header_label)
+        
+        self.account_number = QLineEdit()
+        self.account_number.setPlaceholderText('Cuenta predial (ej. UA009999001)')
+        
+        self.query_button = QPushButton('Consultar')
+        self.query_button.setStyleSheet("background-color: #008CBA; color: white; padding: 10px; color: black;")
+        
+        layout.addWidget(self.account_number)
+        layout.addWidget(self.query_button)
+        layout.setSpacing(10)
+
+
+class PaymentWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        header_label = QLabel("Predial")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setFont(QFont("Arial", 24, QFont.Bold))
+        layout.addWidget(header_label)
+        
+        self.pay_button = QPushButton('Pagar')
+        self.pay_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; color: black;")
+        layout.addWidget(self.pay_button)
+
 
 class PredialApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.initUI()
-    
-    def initUI(self):
+        self.db = DatabaseManager('usuarios.db')
+        self.db.setup()
+        self.init_ui()
+
+    def init_ui(self):
         self.setWindowTitle('Sistema de Predial')
-        self.setGeometry(100, 100, 400, 300)
-        
-        # Layout principal
-        self.main_layout = QVBoxLayout()
-        
-        # Mostrar ventana de registro al inicio
-        self.show_registration()
-        
-        self.setLayout(self.main_layout)
-    
-    def show_registration(self):
-        # Limpiar el layout principal
-        self.clear_layout(self.main_layout)
-        
-        # Layout de registro
-        registration_layout = QVBoxLayout()
-        
-        # Campos de registro
-        self.first_name = QLineEdit(self)
-        self.first_name.setPlaceholderText('Nombres')
-        self.last_name = QLineEdit(self)
-        self.last_name.setPlaceholderText('Apellidos')
-        self.phone = QLineEdit(self)
-        self.phone.setPlaceholderText('Número de teléfono')
-        self.email = QLineEdit(self)
-        self.email.setPlaceholderText('Correo electrónico')
-        self.password = QLineEdit(self)
-        self.password.setPlaceholderText('Contraseña')
-        self.password.setEchoMode(QLineEdit.Password)
-        
-        # Botón de registro
-        register_button = QPushButton('Regístrate', self)
-        register_button.clicked.connect(self.register)
-        
-        # Añadir campos al layout de registro
-        registration_layout.addWidget(self.first_name)
-        registration_layout.addWidget(self.last_name)
-        registration_layout.addWidget(self.phone)
-        registration_layout.addWidget(self.email)
-        registration_layout.addWidget(self.password)
-        registration_layout.addWidget(register_button)
-        
-        # Campos de inicio de sesión
-        self.login_phone = QLineEdit(self)
-        self.login_phone.setPlaceholderText('Teléfono')
-        self.login_password = QLineEdit(self)
-        self.login_password.setPlaceholderText('Contraseña')
-        self.login_password.setEchoMode(QLineEdit.Password)
-        self.terms_checkbox = QCheckBox('Aceptar términos', self)
-        
-        # Botón de inicio de sesión
-        login_button = QPushButton('Entrar', self)
-        login_button.clicked.connect(self.login)
-        
-        # Añadir campos al layout de inicio de sesión
-        registration_layout.addWidget(self.login_phone)
-        registration_layout.addWidget(self.login_password)
-        registration_layout.addWidget(self.terms_checkbox)
-        registration_layout.addWidget(login_button)
-        
-        self.main_layout.addLayout(registration_layout)
-    
-    def register(self):
-        nombre = self.first_name.text()
-        apellido = self.last_name.text()
-        telefono = self.phone.text()
-        correo = self.email.text()
-        contrasena = self.password.text()
-        if nombre and apellido and telefono and correo and contrasena:
-            try:
-                c.execute("INSERT INTO usuarios (nombre, apellido, telefono, correo, contrasena) VALUES (?, ?, ?, ?, ?)", 
-                          (nombre, apellido, telefono, correo, contrasena))
-                conn.commit()
-                QMessageBox.information(self, 'Registro', 'Usuario registrado con éxito!')
-            except sqlite3.IntegrityError:
-                QMessageBox.warning(self, 'Error', 'El teléfono ya está registrado')
-        else:
-            QMessageBox.warning(self, 'Error', 'Todos los campos son obligatorios')
-    
+        self.setGeometry(100, 100, 400, 400)
+        self.setStyleSheet("background-color: #f0f0f0; font-family: Arial; color: black;")
+
+        self.stack = QStackedWidget()
+        self.auth_window = AuthWindow()
+        self.debt_query_window = DebtQueryWindow(self)
+        self.payment_window = PaymentWindow()
+
+        self.stack.addWidget(self.auth_window)
+        self.stack.addWidget(self.debt_query_window)
+        self.stack.addWidget(self.payment_window)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.stack)
+
+        self.auth_window.login_button.clicked.connect(self.login)
+        self.auth_window.register_button.clicked.connect(self.register)
+        self.debt_query_window.query_button.clicked.connect(self.query_debt)
+        self.payment_window.pay_button.clicked.connect(self.process_payment)
+
     def login(self):
-        telefono = self.login_phone.text()
-        contrasena = self.login_password.text()
-        aceptar_terminos = self.terms_checkbox.isChecked()
-        
+        telefono = self.auth_window.login_phone.text()
+        contrasena = self.auth_window.login_password.text()
+        aceptar_terminos = self.auth_window.terms_checkbox.isChecked()
+
         if telefono and contrasena and aceptar_terminos:
-            c.execute("SELECT * FROM usuarios WHERE telefono = ? AND contrasena = ?", (telefono, contrasena))
-            usuario = c.fetchone()
+            usuario = self.db.login_user(telefono, contrasena)
             if usuario:
                 QMessageBox.information(self, 'Inicio de sesión', 'Sesión iniciada con éxito!')
-                self.show_debt_query()
+                self.stack.setCurrentWidget(self.debt_query_window)
             else:
                 QMessageBox.warning(self, 'Error', 'Teléfono o contraseña incorrectos')
         else:
             QMessageBox.warning(self, 'Error', 'Todos los campos son obligatorios y debe aceptar los términos')
-    
-    def show_debt_query(self):
-        # Limpiar el layout principal
-        self.clear_layout(self.main_layout)
-        
-        # Layout de consulta de adeudo
-        debt_layout = QVBoxLayout()
-        
-        # Campo de cuenta predial
-        self.account_number = QLineEdit(self)
-        self.account_number.setPlaceholderText('Cuenta predial (ej. UA009999001)')
-        
-        # Botón de consulta
-        query_button = QPushButton('Consultar', self)
-        query_button.clicked.connect(self.query_debt)
-        
-        # Añadir campos al layout de consulta
-        debt_layout.addWidget(self.account_number)
-        debt_layout.addWidget(query_button)
-        
-        self.main_layout.addLayout(debt_layout)
-    
-    def query_debt(self):
-        cuenta = self.account_number.text()
-        c.execute("SELECT adeudo FROM adeudos WHERE cuenta = ?", (cuenta,))
-        resultado = c.fetchone()
-        if resultado:
-            QMessageBox.information(self, 'Consulta de adeudo', f'Adeudo: ${resultado[0]:.2f}')
-            self.show_payment_process()
+
+    def register(self):
+        nombre = self.auth_window.first_name.text()
+        apellido = self.auth_window.last_name.text()
+        telefono = self.auth_window.register_phone.text()
+        correo = self.auth_window.email.text()
+        contrasena = self.auth_window.register_password.text()
+        if nombre and apellido and telefono and correo and contrasena:
+            try:
+                self.db.register_user(nombre, apellido, telefono, correo, contrasena)
+                QMessageBox.information(self, 'Registro', 'Usuario registrado con éxito!')
+                self.auth_window.tab_widget.setCurrentIndex(0)
+            except sqlite3.IntegrityError:
+                QMessageBox.warning(self, 'Error', 'El teléfono ya está registrado')
         else:
-            QMessageBox.warning(self, 'Error', 'Cuenta no encontrada')
-    
-    def show_payment_process(self):
-        # Limpiar el layout principal
-        self.clear_layout(self.main_layout)
-        
-        # Layout de proceso de pago
-        payment_layout = QVBoxLayout()
-        
-        # Campos de tarjeta
-        self.card_number = QLineEdit(self)
-        self.card_number.setPlaceholderText('Número de tarjeta')
-        self.expiry_date = QLineEdit(self)
-        self.expiry_date.setPlaceholderText('Fecha de expiración (MM/AA)')
-        self.cvv = QLineEdit(self)
-        self.cvv.setPlaceholderText('CVV')
-        
-        # Botón de pago
-        pay_button = QPushButton('Pagar', self)
-        pay_button.clicked.connect(self.process_payment)
-        
-        # Añadir campos al layout de pago
-        payment_layout.addWidget(self.card_number)
-        payment_layout.addWidget(self.expiry_date)
-        payment_layout.addWidget(self.cvv)
-        payment_layout.addWidget(pay_button)
-        
-        self.main_layout.addLayout(payment_layout)
-    
+            QMessageBox.warning(self, 'Error', 'Todos los campos son obligatorios')
+
+    def query_debt(self):
+        cuenta = self.debt_query_window.account_number.text()
+        if cuenta:
+            resultado = self.db.query_debt(cuenta)
+            if resultado:
+                adeudo = resultado[0]
+                QMessageBox.information(self, 'Consulta de Deuda', f'El adeudo para la cuenta {cuenta} es: ${adeudo:.2f}')
+            else:
+                QMessageBox.warning(self, 'Error', 'Cuenta no encontrada')
+        else:
+            QMessageBox.warning(self, 'Error', 'Debe ingresar un número de cuenta')
+
     def process_payment(self):
-        # Aquí iría la lógica para procesar el pago
-        QMessageBox.information(self, 'Pago', 'Pago realizado con éxito!')
-    
-    def clear_layout(self, layout):
-        # Limpiar layout
-        while layout.count():
-            child = layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        QMessageBox.information(self, 'Procesar Pago', 'Funcionalidad no implementada.')
+
+    def closeEvent(self, event):
+        self.db.close()
+        event.accept()
 
 
 if __name__ == '__main__':
@@ -189,6 +246,3 @@ if __name__ == '__main__':
     ex = PredialApp()
     ex.show()
     sys.exit(app.exec_())
-
-# Cerrar la conexión a la base de datos
-conn.close()
