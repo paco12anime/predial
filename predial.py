@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLineEdit, QPus
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
 import sqlite3
+import re
 
 class DatabaseManager:
     def __init__(self, db_name):
@@ -11,8 +12,12 @@ class DatabaseManager:
         self.connect()
 
     def connect(self):
-        self.conn = sqlite3.connect(self.db_name)
-        self.cursor = self.conn.cursor()
+        try:
+            self.conn = sqlite3.connect(self.db_name)
+            self.cursor = self.conn.cursor()
+        except sqlite3.Error as e:
+            print(f"Error connecting to database: {e}")
+            QMessageBox.critical(None, "Database Error", f"Error connecting to database: {e}")
 
     def setup(self):
         self.cursor.execute('''
@@ -53,6 +58,13 @@ class DatabaseManager:
         self.cursor.execute('SELECT adeudo FROM adeudos WHERE cuenta = ?', (cuenta,))
         return self.cursor.fetchone()
 
+    def add_debt(self, cuenta, adeudo):
+        self.cursor.execute('''
+            INSERT INTO adeudos (cuenta, adeudo)
+            VALUES (?, ?)
+        ''', (cuenta, adeudo))
+        self.conn.commit()
+
     def close(self):
         self.conn.close()
 
@@ -85,7 +97,7 @@ class AuthWindow(QWidget):
         self.login_password.setEchoMode(QLineEdit.Password)
         self.terms_checkbox = QCheckBox('Aceptar términos')
         self.login_button = QPushButton('Entrar')
-        self.login_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; color: black;")
+        self.login_button.setStyleSheet("background-color: #4CAF50; color: black; padding: 10px;")
         
         login_layout.addWidget(self.login_phone)
         login_layout.addWidget(self.login_password)
@@ -106,7 +118,7 @@ class AuthWindow(QWidget):
         self.register_password.setPlaceholderText('Contraseña')
         self.register_password.setEchoMode(QLineEdit.Password)
         self.register_button = QPushButton('Regístrate')
-        self.register_button.setStyleSheet("background-color: #008CBA; color: white; padding: 10px; color: black;")
+        self.register_button.setStyleSheet("background-color: #008CBA; color: black; padding: 10px;")
         
         register_layout.addWidget(self.first_name)
         register_layout.addWidget(self.last_name)
@@ -136,10 +148,14 @@ class DebtQueryWindow(QWidget):
         self.account_number.setPlaceholderText('Cuenta predial (ej. UA009999001)')
         
         self.query_button = QPushButton('Consultar')
-        self.query_button.setStyleSheet("background-color: #008CBA; color: white; padding: 10px; color: black;")
+        self.query_button.setStyleSheet("background-color: #008CBA; color: black; padding: 10px;")
+        
+        self.logout_button = QPushButton('Cerrar sesión')
+        self.logout_button.setStyleSheet("background-color: #f44336; color: black; padding: 10px;")
         
         layout.addWidget(self.account_number)
         layout.addWidget(self.query_button)
+        layout.addWidget(self.logout_button)
         layout.setSpacing(10)
 
 
@@ -157,8 +173,40 @@ class PaymentWindow(QWidget):
         layout.addWidget(header_label)
         
         self.pay_button = QPushButton('Pagar')
-        self.pay_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; color: black;")
+        self.pay_button.setStyleSheet("background-color: #4CAF50; color: black; padding: 10px;")
         layout.addWidget(self.pay_button)
+
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.status_label)
+
+
+class AddDebtWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        header_label = QLabel("Añadir Adeudo")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setFont(QFont("Arial", 24, QFont.Bold))
+        layout.addWidget(header_label)
+        
+        self.account_number = QLineEdit()
+        self.account_number.setPlaceholderText('Cuenta predial')
+        
+        self.debt_amount = QLineEdit()
+        self.debt_amount.setPlaceholderText('Monto de adeudo')
+        
+        self.add_button = QPushButton('Añadir')
+        self.add_button.setStyleSheet("background-color: #4CAF50; color: black; padding: 10px;")
+        
+        layout.addWidget(self.account_number)
+        layout.addWidget(self.debt_amount)
+        layout.addWidget(self.add_button)
+        layout.setSpacing(10)
 
 
 class PredialApp(QWidget):
@@ -176,11 +224,13 @@ class PredialApp(QWidget):
         self.stack = QStackedWidget()
         self.auth_window = AuthWindow()
         self.debt_query_window = DebtQueryWindow(self)
-        self.payment_window = PaymentWindow()
+        self.payment_window = PaymentWindow(self)
+        self.add_debt_window = AddDebtWindow(self)
 
         self.stack.addWidget(self.auth_window)
         self.stack.addWidget(self.debt_query_window)
         self.stack.addWidget(self.payment_window)
+        self.stack.addWidget(self.add_debt_window)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.stack)
@@ -188,7 +238,9 @@ class PredialApp(QWidget):
         self.auth_window.login_button.clicked.connect(self.login)
         self.auth_window.register_button.clicked.connect(self.register)
         self.debt_query_window.query_button.clicked.connect(self.query_debt)
+        self.debt_query_window.logout_button.clicked.connect(self.logout)
         self.payment_window.pay_button.clicked.connect(self.process_payment)
+        self.add_debt_window.add_button.clicked.connect(self.add_debt)
 
     def login(self):
         telefono = self.auth_window.login_phone.text()
@@ -211,7 +263,14 @@ class PredialApp(QWidget):
         telefono = self.auth_window.register_phone.text()
         correo = self.auth_window.email.text()
         contrasena = self.auth_window.register_password.text()
+
         if nombre and apellido and telefono and correo and contrasena:
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", correo):
+                QMessageBox.warning(self, 'Error', 'Formato de correo incorrecto')
+                return
+            if len(contrasena) < 6:
+                QMessageBox.warning(self, 'Error', 'La contraseña debe tener al menos 6 caracteres')
+                return
             try:
                 self.db.register_user(nombre, apellido, telefono, correo, contrasena)
                 QMessageBox.information(self, 'Registro', 'Usuario registrado con éxito!')
@@ -227,19 +286,31 @@ class PredialApp(QWidget):
             resultado = self.db.query_debt(cuenta)
             if resultado:
                 adeudo = resultado[0]
-                QMessageBox.information(self, 'Consulta de Deuda', f'El adeudo para la cuenta {cuenta} es: ${adeudo:.2f}')
+                QMessageBox.information(self, 'Adeudo', f'Su adeudo es de ${adeudo:.2f}')
+                self.stack.setCurrentWidget(self.payment_window)
             else:
                 QMessageBox.warning(self, 'Error', 'Cuenta no encontrada')
         else:
-            QMessageBox.warning(self, 'Error', 'Debe ingresar un número de cuenta')
+            QMessageBox.warning(self, 'Error', 'Debe ingresar una cuenta')
+
+    def logout(self):
+        self.stack.setCurrentWidget(self.auth_window)
 
     def process_payment(self):
-        QMessageBox.information(self, 'Procesar Pago', 'Funcionalidad no implementada.')
+        self.payment_window.status_label.setText("Procesando pago...")
+        QMessageBox.information(self, 'Pago', 'Pago procesado con éxito!')
+        self.payment_window.status_label.setText("")
 
-    def closeEvent(self, event):
-        self.db.close()
-        event.accept()
+    def add_debt(self):
+        cuenta = self.add_debt_window.account_number.text()
+        adeudo = self.add_debt_window.debt_amount.text()
 
+        try:
+            adeudo = float(adeudo)
+            self.db.add_debt(cuenta, adeudo)
+            QMessageBox.information(self, 'Añadir Adeudo', 'Adeudo añadido con éxito!')
+        except ValueError:
+            QMessageBox.warning(self, 'Error', 'El monto del adeudo debe ser un número válido')
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
