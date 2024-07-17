@@ -48,7 +48,7 @@ Sistema de Predial es una aplicación de escritorio desarrollada con PyQt5 y SQL
 1. Ejecuta la aplicación:
 
     ```bash
-    python main.py
+    python3 predial.py
     ```
 
 2. Se abrirá la ventana principal donde puedes registrarte o iniciar sesión.
